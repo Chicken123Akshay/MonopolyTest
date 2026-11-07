@@ -1,0 +1,1454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Monopoly Banker Live</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Tone.js for tactile game sound effects without external audio files -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+  <!-- Google Fonts: Cinzel & Outfit for luxury board game aesthetic -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800;900&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            board: {
+              dark: '#081c15',
+              card: '#1b4332',
+              surface: '#2d6a4f',
+              accent: '#d4af37',
+              accentGlow: '#f3c053',
+              red: '#e63946',
+              lightRed: '#ff6b6b'
+            }
+          },
+          fontFamily: {
+            title: ['Cinzel', 'serif'],
+            sans: ['Outfit', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Custom scrollbars and tactile active touch feedback */
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.2); }
+    ::-webkit-scrollbar-thumb { background: #d4af37; border-radius: 4px; }
+    
+    .touch-press {
+      transition: transform 0.08s ease, filter 0.08s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .touch-press:active {
+      transform: scale(0.96);
+      filter: brightness(0.9);
+    }
+    .gold-gradient {
+      background: linear-gradient(135deg, #fce07e 0%, #d4af37 50%, #996515 100%);
+    }
+    .gold-border {
+      border: 1px solid rgba(212, 175, 55, 0.35);
+    }
+    .glow-gold {
+      box-shadow: 0 0 20px rgba(212, 175, 55, 0.25);
+    }
+    .bank-vault-bg {
+      background: radial-gradient(circle at 50% 10%, #17382c 0%, #081c15 85%);
+    }
+    /* Disable bounce on mobile viewports */
+    body {
+      overscroll-behavior-y: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+  </style>
+</head>
+
+<body class="bg-board-dark text-slate-100 font-sans min-h-screen flex flex-col justify-between overflow-x-hidden">
+
+  <!-- ================= NOTIFICATION TOAST ================= -->
+  <div id="toast" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 pointer-events-none transition-all duration-300 opacity-0 -translate-y-4 max-w-[90vw] w-auto">
+    <div id="toast-content" class="bg-stone-900 border border-yellow-500/50 text-yellow-300 text-sm font-semibold px-4 py-2.5 rounded-full shadow-2xl flex items-center gap-2">
+      <i id="toast-icon" class="fa-solid fa-circle-info"></i>
+      <span id="toast-message">Notification</span>
+    </div>
+  </div>
+
+  <!-- ================= TOP HEADER ================= -->
+  <header class="w-full bg-[#0a1e16]/90 backdrop-blur border-b border-yellow-500/20 px-4 py-3 flex items-center justify-between sticky top-0 z-30">
+    <div class="flex items-center gap-2.5">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-600 to-yellow-400 flex items-center justify-center text-board-dark font-black shadow-md">
+        <i class="fa-solid fa-building-columns text-lg"></i>
+      </div>
+      <div>
+        <h1 class="font-title text-base sm:text-lg font-bold tracking-wider text-amber-300 leading-tight">MONOPOLY BANK by Akshay the Chicken Eater</h1>
+        <div id="room-badge" class="hidden flex items-center gap-1.5 text-xs text-emerald-400 font-mono">
+          <span class="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          ROOM: <span id="display-room-code" class="font-bold tracking-widest text-white">----</span>
+          <button id="copy-room-btn" class="ml-1 text-slate-400 hover:text-white"><i class="fa-regular fa-copy text-[11px]"></i></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Header Actions -->
+    <div class="flex items-center gap-2">
+      <!-- Mute SFX Toggle -->
+      <button id="toggle-sound-btn" class="w-8 h-8 rounded-lg bg-emerald-950/60 border border-emerald-700/50 flex items-center justify-center text-amber-300 text-sm touch-press" title="Toggle Sound">
+        <i id="sound-icon" class="fa-solid fa-volume-high"></i>
+      </button>
+      <!-- Leave / Disconnect -->
+      <button id="leave-room-btn" class="hidden w-8 h-8 rounded-lg bg-red-950/60 border border-red-700/50 flex items-center justify-center text-red-300 text-sm touch-press" title="Leave Game">
+        <i class="fa-solid fa-right-from-bracket"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- ================= MAIN CONTAINER ================= -->
+  <main class="flex-1 w-full max-w-lg mx-auto p-4 flex flex-col justify-start">
+
+    <!-- 1. LOBBY VIEW (Join / Host Room) -->
+    <section id="lobby-section" class="flex-1 flex flex-col justify-center space-y-6 py-4">
+      <div class="text-center space-y-2">
+        <div class="inline-flex p-3 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-3xl mb-1">
+          <i class="fa-solid fa-dice-d20"></i>
+        </div>
+        <h2 class="text-2xl font-bold font-title text-white">Board Game Companion--By Chicken</h2>
+        <p class="text-xs text-slate-400">Play physically on the board. Handle money instantly on phones.</p>
+      </div>
+
+      <!-- Player Identity Card -->
+      <div class="bg-[#102a1f] border border-yellow-500/20 rounded-2xl p-4 shadow-xl space-y-4">
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-wider text-amber-300/80 mb-1.5">Your Player Name</label>
+          <input id="input-player-name" type="text" maxlength="14" placeholder="e.g. Papa, Sarah, Uncle Dave" class="w-full bg-[#081812] border border-emerald-700/60 rounded-xl px-3.5 py-2.5 text-white font-medium focus:outline-none focus:border-amber-400 text-sm">
+        </div>
+
+        <!-- Token Selection -->
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-wider text-amber-300/80 mb-1.5">Choose Playing Token</label>
+          <div class="grid grid-cols-6 gap-2" id="token-selector">
+            <!-- Rendered by JS -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Tabs: Host or Join -->
+      <div class="bg-[#102a1f] border border-yellow-500/20 rounded-2xl p-4 shadow-xl space-y-4">
+        <div class="flex bg-[#081812] p-1 rounded-xl">
+          <button id="tab-join" class="flex-1 py-2 text-xs font-bold rounded-lg bg-amber-500 text-board-dark shadow">JOIN GAME</button>
+          <button id="tab-host" class="flex-1 py-2 text-xs font-bold rounded-lg text-slate-400">CREATE NEW</button>
+        </div>
+
+        <!-- Join Form -->
+        <div id="join-form" class="space-y-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">4-Digit Room Code</label>
+            <input id="input-room-code" type="text" maxlength="6" placeholder="e.g. 7482" class="w-full uppercase text-center tracking-widest text-lg font-mono font-bold bg-[#081812] border border-emerald-700/60 rounded-xl px-3 py-2.5 text-amber-300 focus:outline-none focus:border-amber-400">
+          </div>
+          <button id="btn-join-room" class="w-full py-3.5 rounded-xl gold-gradient text-board-dark font-extrabold text-sm tracking-wide shadow-lg touch-press">
+            JOIN TABLE
+          </button>
+        </div>
+
+        <!-- Host Form -->
+        <div id="host-form" class="space-y-3 hidden">
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Starting Balance Per Player</label>
+            <div class="grid grid-cols-3 gap-2">
+              <button type="button" class="start-bal-btn py-2 text-xs font-bold rounded-lg bg-emerald-900 border border-emerald-600 text-white" data-bal="1500">$1,500 (Std)</button>
+              <button type="button" class="start-bal-btn py-2 text-xs font-bold rounded-lg bg-[#081812] border border-emerald-800 text-slate-400" data-bal="2000">$2,000</button>
+              <button type="button" class="start-bal-btn py-2 text-xs font-bold rounded-lg bg-[#081812] border border-emerald-800 text-slate-400" data-bal="2500">$2,500</button>
+            </div>
+          </div>
+          <div class="flex items-center justify-between p-2 rounded-xl bg-[#081812] border border-emerald-900">
+            <span class="text-xs text-slate-300 flex items-center gap-1.5">
+              <i class="fa-solid fa-square-parking text-amber-400 text-sm"></i>
+              Enable Free Parking Jackpot
+            </span>
+            <input id="checkbox-freeparking" type="checkbox" checked class="w-4 h-4 accent-amber-500 rounded cursor-pointer">
+          </div>
+          <button id="btn-host-room" class="w-full py-3.5 rounded-xl gold-gradient text-board-dark font-extrabold text-sm tracking-wide shadow-lg touch-press">
+            CREATE ROOM AS BANKER
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. GAME DASHBOARD VIEW -->
+    <section id="game-section" class="flex-1 flex flex-col space-y-4 hidden pb-6">
+
+      <!-- MY CASH HERO CARD -->
+      <div class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#1d4c38] via-[#123326] to-[#081a13] border border-amber-500/40 p-4 shadow-2xl">
+        <div class="absolute -right-6 -bottom-6 text-emerald-800/20 text-9xl pointer-events-none">
+          <i id="hero-bg-icon" class="fa-solid fa-car-side"></i>
+        </div>
+
+        <div class="flex items-start justify-between relative z-10">
+          <div class="flex items-center gap-2.5">
+            <div id="my-token-badge" class="w-11 h-11 rounded-xl bg-amber-400/20 border border-amber-400/40 text-amber-300 flex items-center justify-center text-xl shadow">
+              <i class="fa-solid fa-hat-cowboy"></i>
+            </div>
+            <div>
+              <div class="flex items-center gap-1.5">
+                <span id="my-name-display" class="font-bold text-white text-base leading-none">Player Name</span>
+                <span id="banker-crown" class="hidden text-amber-400 text-xs" title="Bank Manager"><i class="fa-solid fa-crown"></i></span>
+              </div>
+              <span class="text-[11px] text-emerald-300/80 font-mono">Current Cash</span>
+            </div>
+          </div>
+
+          <!-- Free Parking Mini Pot -->
+          <div id="freeparking-banner" class="bg-[#0b2419] border border-amber-500/30 rounded-xl px-2.5 py-1 text-right flex flex-col items-end">
+            <span class="text-[10px] uppercase font-bold text-amber-400 flex items-center gap-1">
+              <i class="fa-solid fa-square-parking text-xs"></i> Free Parking
+            </span>
+            <span id="freeparking-amount" class="font-mono font-bold text-xs text-white">$0</span>
+          </div>
+        </div>
+
+        <!-- BIG BALANCE NUMBER -->
+        <div class="mt-4 mb-2 text-center relative z-10">
+          <span class="text-4xl sm:text-5xl font-mono font-black tracking-tight text-white drop-shadow">
+            <span class="text-amber-400">$</span><span id="my-balance-display">1,500</span>
+          </span>
+        </div>
+
+        <!-- QUICK ACTION BAR -->
+        <div class="grid grid-cols-2 gap-2 mt-4 relative z-10">
+          <!-- Pass GO button -->
+          <button id="btn-quick-go" class="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-500 hover:to-teal-600 text-white font-bold text-xs shadow-md border border-emerald-400/30 touch-press">
+            <i class="fa-solid fa-arrow-rotate-right text-amber-300"></i>
+            <span>PASS GO (+<span class="text-amber-300 font-mono">$200</span>)</span>
+          </button>
+
+          <!-- Free Parking Collect (Jackpot) -->
+          <button id="btn-collect-freeparking" class="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-700 to-amber-600 hover:from-amber-600 hover:to-yellow-600 text-white font-bold text-xs shadow-md border border-amber-400/40 touch-press">
+            <i class="fa-solid fa-hand-holding-dollar text-yellow-300"></i>
+            <span>TAKE FREE PARKING</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- MAIN ACTION TABS: TRANSFER / BANK / PLAYERS -->
+      <div class="flex bg-[#0d261c] p-1 rounded-xl border border-yellow-500/20 text-xs font-semibold">
+        <button id="tab-view-actions" class="flex-1 py-2 rounded-lg bg-emerald-800 text-amber-300 shadow font-bold flex items-center justify-center gap-1.5">
+          <i class="fa-solid fa-money-bill-transfer"></i> Transact
+        </button>
+        <button id="tab-view-players" class="flex-1 py-2 rounded-lg text-slate-300 flex items-center justify-center gap-1.5">
+          <i class="fa-solid fa-users"></i> Table (<span id="player-count-pill">0</span>)
+        </button>
+        <button id="tab-view-logs" class="flex-1 py-2 rounded-lg text-slate-300 flex items-center justify-center gap-1.5">
+          <i class="fa-solid fa-clock-rotate-left"></i> Feed
+        </button>
+      </div>
+
+      <!-- SECTION: TRANSACTIONS & KEYPAD -->
+      <div id="subview-actions" class="space-y-3">
+
+        <!-- Target Destination Selector -->
+        <div class="bg-[#102a1f] border border-yellow-500/20 rounded-xl p-3">
+          <label class="block text-[11px] font-bold uppercase tracking-wider text-amber-400 mb-2">Send Money To:</label>
+          <div id="target-player-list" class="flex gap-2 overflow-x-auto pb-1">
+            <!-- Bank & other active players inserted dynamically -->
+          </div>
+        </div>
+
+        <!-- Amount Display & Tactile Keypad -->
+        <div class="bg-[#102a1f] border border-yellow-500/20 rounded-2xl p-3.5 shadow-xl">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs text-slate-400 font-medium">Transfer Amount</span>
+            <!-- Quick Chips -->
+            <div class="flex gap-1.5">
+              <button class="amount-preset-chip px-2 py-0.5 rounded-md bg-[#081812] border border-emerald-700/60 text-[11px] text-amber-300 font-mono font-bold" data-val="50">+$50</button>
+              <button class="amount-preset-chip px-2 py-0.5 rounded-md bg-[#081812] border border-emerald-700/60 text-[11px] text-amber-300 font-mono font-bold" data-val="100">+$100</button>
+              <button class="amount-preset-chip px-2 py-0.5 rounded-md bg-[#081812] border border-emerald-700/60 text-[11px] text-amber-300 font-mono font-bold" data-val="200">+$200</button>
+              <button class="amount-preset-chip px-2 py-0.5 rounded-md bg-[#081812] border border-emerald-700/60 text-[11px] text-amber-300 font-mono font-bold" data-val="500">+$500</button>
+            </div>
+          </div>
+
+          <!-- Screen / Input Amount -->
+          <div class="bg-[#071710] rounded-xl border border-emerald-800/80 p-3 text-right flex items-center justify-between mb-3">
+            <span class="text-xs text-slate-500 font-mono">USD</span>
+            <div class="font-mono text-3xl font-black text-amber-400 tracking-tight flex items-baseline justify-end">
+              <span>$</span><span id="keypad-display">0</span>
+            </div>
+          </div>
+
+          <!-- Reason / Tag Presets -->
+          <div class="mb-3">
+            <span class="block text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-1.5">Preset Note / Reason</span>
+            <div class="grid grid-cols-3 gap-1.5" id="preset-notes">
+              <button type="button" class="note-chip py-1.5 px-2 rounded-lg bg-[#081812] border border-emerald-900 text-[11px] text-slate-300 truncate hover:border-amber-500/50" data-note="Rent">🏠 Rent</button>
+              <button type="button" class="note-chip py-1.5 px-2 rounded-lg bg-[#081812] border border-emerald-900 text-[11px] text-slate-300 truncate hover:border-amber-500/50" data-note="Buy Property">📜 Buy Deed</button>
+              <button type="button" class="note-chip py-1.5 px-2 rounded-lg bg-[#081812] border border-emerald-900 text-[11px] text-slate-300 truncate hover:border-amber-500/50" data-note="Houses/Hotels">🏨 Build</button>
+              <button type="button" class="note-chip py-1.5 px-2 rounded-lg bg-[#081812] border border-emerald-900 text-[11px] text-slate-300 truncate hover:border-amber-500/50" data-note="Tax / Fine">⚖️ Luxury Tax</button>
+              <button type="button" class="note-chip py-1.5 px-2 rounded-lg bg-[#081812] border border-emerald-900 text-[11px] text-slate-300 truncate hover:border-amber-500/50" data-note="Trade / Deal">🤝 Trade</button>
+              <button type="button" class="note-chip py-1.5 px-2 rounded-lg bg-[#081812] border border-emerald-900 text-[11px] text-slate-300 truncate hover:border-amber-500/50" data-note="Get Out of Jail">👮 Jail Bail</button>
+            </div>
+            <input id="custom-note-input" type="text" maxlength="32" placeholder="Or custom note (optional)..." class="mt-1.5 w-full bg-[#081812] border border-emerald-900 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-400">
+          </div>
+
+          <!-- Tactile NumPad Grid -->
+          <div class="grid grid-cols-3 gap-2">
+            <button class="numpad-btn h-12 rounded-xl bg-[#0d2b1f] border border-emerald-700/40 text-xl font-bold font-mono text-white touch-press hover:bg-emerald-900" data-num="1">1</button>
+            <button class="numpad-btn h-12 rounded-xl bg-[#0d2b1f] border border-emerald-700/40 text-xl font-bold font-mono text-white touch-press hover:bg-emerald-900" data-num="2">2</button>
+            <button class="numpad-btn h-12 rounded-xl bg-[#0d2b1f] border border-emerald-700/40 text-xl font-bold font-mono text-white touch-press hover:bg-emerald-900" data-num="3">3</button>
+
+            <button class="numpad-btn h-12 rounded-xl bg-[#0d2b1f] border border-emerald-700/40 text-xl font-bold font-mono text-white touch-press hover:bg-emerald-900" data-num="4">4</button>
+            <button class="numpad-btn h-12 rounded-xl bg-[#0d2b1f] border border-emerald-700/40 text-xl font-bold font-mono text-white touch-press hover:bg-emerald-900" data-num="5">5</button>
+            <button class="numpad-btn h-12 rounded-xl bg-[#0d2b1f] border border-emerald-700/40 text-xl font-bold font-mono text-white touch-press hover:bg-emerald-900" data-num="6">6</button>
+
+            <button class="numpad-btn h-12 rounded-xl bg-[#0d2b1f] border border-emerald-700/40 text-xl font-bold font-mono text-white touch-press hover:bg-emerald-900" data-num="7">7</button>
+            <button class="numpad-btn h-12 rounded-xl bg-[#0d2b1f] border border-emerald-700/40 text-xl font-bold font-mono text-white touch-press hover:bg-emerald-900" data-num="8">8</button>
+            <button class="numpad-btn h-12 rounded-xl bg-[#0d2b1f] border border-emerald-700/40 text-xl font-bold font-mono text-white touch-press hover:bg-emerald-900" data-num="9">9</button>
+
+            <button id="numpad-clear" class="h-12 rounded-xl bg-[#2a1114] border border-red-800/40 text-sm font-bold uppercase text-red-300 touch-press flex items-center justify-center">CLEAR</button>
+            <button class="numpad-btn h-12 rounded-xl bg-[#0d2b1f] border border-emerald-700/40 text-xl font-bold font-mono text-white touch-press hover:bg-emerald-900" data-num="0">0</button>
+            <button id="numpad-backspace" class="h-12 rounded-xl bg-[#1b2b23] border border-emerald-700/40 text-base text-slate-300 touch-press flex items-center justify-center"><i class="fa-solid fa-delete-left"></i></button>
+          </div>
+
+          <!-- Action execution button -->
+          <div class="grid grid-cols-2 gap-2 mt-3.5">
+            <button id="btn-pay-target" class="py-3 px-2 rounded-xl bg-gradient-to-r from-red-600 to-amber-700 text-white font-bold text-xs uppercase tracking-wider shadow-lg touch-press flex items-center justify-center gap-1.5">
+              <i class="fa-solid fa-paper-plane"></i>
+              <span>PAY <span id="pay-target-name">THE BANK</span></span>
+            </button>
+            <button id="btn-collect-bank" class="py-3 px-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold text-xs uppercase tracking-wider shadow-lg touch-press flex items-center justify-center gap-1.5">
+              <i class="fa-solid fa-hand-holding-dollar"></i>
+              <span>COLLECT FROM BANK</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECTION: ALL PLAYERS TABLE -->
+      <div id="subview-players" class="space-y-3 hidden">
+        <div class="flex items-center justify-between px-1">
+          <span class="text-xs font-bold text-amber-300 uppercase tracking-wider">Players at this board</span>
+          <span id="player-count-label" class="text-xs text-slate-400">0 Active</span>
+        </div>
+        <div id="players-list-container" class="space-y-2">
+          <!-- Rendered dynamically -->
+        </div>
+
+        <!-- Banker controls for manual cash injection or audit -->
+        <div id="banker-admin-panel" class="hidden mt-4 p-3.5 rounded-xl bg-[#132c21] border border-amber-500/40 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+              <i class="fa-solid fa-crown text-yellow-400"></i> Banker Manager Controls
+            </span>
+            <span class="text-[10px] text-emerald-400 bg-emerald-950 px-2 py-0.5 rounded-full border border-emerald-600">HOST</span>
+          </div>
+          <p class="text-[11px] text-slate-300">You are the session banker. You can trigger board events or reset the game.</p>
+          <div class="grid grid-cols-2 gap-2 pt-1">
+            <button id="btn-admin-bonus-all" class="py-2 px-2 rounded-lg bg-emerald-800 text-[11px] font-bold text-white touch-press">Give All $200</button>
+            <button id="btn-admin-reset-freeparking" class="py-2 px-2 rounded-lg bg-amber-900/80 border border-amber-600 text-[11px] font-bold text-amber-200 touch-press">Clear Free Parking</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECTION: LIVE TRANSACTION LOGS -->
+      <div id="subview-logs" class="space-y-2 hidden">
+        <div class="flex items-center justify-between px-1">
+          <span class="text-xs font-bold text-amber-300 uppercase tracking-wider">Live Audit Ledger</span>
+          <span class="text-[10px] text-slate-400">Real-time sync</span>
+        </div>
+        <div id="activity-log-container" class="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+          <!-- Real-time activity items -->
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+  <!-- ================= CONFIRMATION MODAL ================= -->
+  <div id="confirm-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-[#102a1f] border border-yellow-500/40 rounded-2xl p-5 max-w-xs w-full shadow-2xl text-center space-y-4">
+      <div id="confirm-modal-icon" class="w-12 h-12 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-400 mx-auto flex items-center justify-center text-xl">
+        <i class="fa-solid fa-shield-halved"></i>
+      </div>
+      <div>
+        <h3 id="confirm-modal-title" class="font-bold text-base text-white">Confirm Transfer</h3>
+        <p id="confirm-modal-desc" class="text-xs text-slate-300 mt-1">Pay $200 to Bob for Rent?</p>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <button id="confirm-modal-cancel" class="py-2.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold touch-press">Cancel</button>
+        <button id="confirm-modal-ok" class="py-2.5 rounded-xl gold-gradient text-board-dark text-xs font-black shadow-lg touch-press">YES, SEND</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= FOOTER ================= -->
+  <footer class="w-full text-center py-2 text-[10px] text-emerald-600/70 border-t border-emerald-950">
+    Monopoly Banker Companion &bull; Safe, Local, Real-time
+  </footer>
+
+  <!-- ================= FIREBASE & APP SCRIPT ================= -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { 
+      getAuth, 
+      signInAnonymously, 
+      signInWithCustomToken 
+    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { 
+      getFirestore, 
+      doc, 
+      setDoc, 
+      getDoc, 
+      updateDoc, 
+      onSnapshot, 
+      collection 
+    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // ----------------------------------------------------
+    // Sound FX Synthesis via Tone.js
+    // ----------------------------------------------------
+    let soundEnabled = true;
+    let sfxSynth = null;
+
+    function initAudio() {
+      if (!sfxSynth && typeof Tone !== 'undefined') {
+        try {
+          sfxSynth = new Tone.PolySynth(Tone.Synth).toDestination();
+          sfxSynth.volume.value = -8;
+        } catch(e) {
+          console.log("Audio context standby");
+        }
+      }
+      if (typeof Tone !== 'undefined' && Tone.context.state !== 'running') {
+        Tone.start();
+      }
+    }
+
+    function playSound(type) {
+      if (!soundEnabled || !sfxSynth) return;
+      try {
+        const now = Tone.now();
+        if (type === 'tap') {
+          sfxSynth.triggerAttackRelease("C6", "32n", now, 0.2);
+        } else if (type === 'go') {
+          sfxSynth.triggerAttackRelease(["C5", "E5", "G5", "C6"], "8n", now, 0.4);
+        } else if (type === 'pay') {
+          sfxSynth.triggerAttackRelease(["G4", "D4"], "16n", now, 0.3);
+        } else if (type === 'collect') {
+          sfxSynth.triggerAttackRelease(["E5", "A5", "C6"], "12n", now, 0.35);
+        } else if (type === 'jackpot') {
+          sfxSynth.triggerAttackRelease(["C5", "G5", "C6", "E6"], "4n", now, 0.5);
+        }
+      } catch (e) {
+        // Fallback silently if audio context is blocked
+      }
+    }
+
+    // ----------------------------------------------------
+    // Firebase Initialization & Config
+    // ----------------------------------------------------
+    // ----------------------------------------------------
+    // Firebase Initialization & Config
+    // ----------------------------------------------------
+    const appId = 'monopoly-game-banking';
+    const firebaseConfig = {
+      apiKey: "AIzaSyC0R9QXFFHtOjrl7Yptc-a_xO_MOC3hPUI",
+      authDomain: "monopoly-game-banking.firebaseapp.com",
+      projectId: "monopoly-game-banking",
+      storageBucket: "monopoly-game-banking.firebasestorage.app",
+      messagingSenderId: "295133896323",
+      appId: "1:295133896323:web:9071f8a92ea69f025945b6"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    // Tokens list
+    const TOKENS = [
+      { id: 'car', icon: 'fa-car-side', name: 'Racecar' },
+      { id: 'tophat', icon: 'fa-hat-cowboy-side', name: 'Top Hat' },
+      { id: 'dog', icon: 'fa-dog', name: 'Scottie' },
+      { id: 'ship', icon: 'fa-ship', name: 'Battleship' },
+      { id: 'thimble', icon: 'fa-ring', name: 'Thimble' },
+      { id: 'cat', icon: 'fa-cat', name: 'Cat' },
+      { id: 'boot', icon: 'fa-shoe-prints', name: 'Boot' },
+      { id: 'wheelbarrow', icon: 'fa-dolly', name: 'Barrow' },
+      { id: 'iron', icon: 'fa-cube', name: 'Iron' },
+      { id: 'plane', icon: 'fa-plane', name: 'Airplane' },
+      { id: 'guitar', icon: 'fa-guitar', name: 'Guitar' },
+      { id: 'trophy', icon: 'fa-trophy', name: 'Trophy' }
+    ];
+
+    // Local State
+    let currentUser = null;
+    let myPlayerId = null;
+    let currentRoomCode = null;
+    let roomUnsubscribe = null;
+    let selectedToken = TOKENS[0];
+    let selectedTargetId = 'BANK'; // 'BANK' or another playerId
+    let keypadAmount = '0';
+    let startingBalSetting = 1500;
+    let currentRoomData = null;
+    let activePresetNote = '';
+
+    // UI Elements
+    const toastEl = document.getElementById('toast');
+    const toastMsg = document.getElementById('toast-message');
+    const lobbySec = document.getElementById('lobby-section');
+    const gameSec = document.getElementById('game-section');
+    const roomBadge = document.getElementById('room-badge');
+    const displayRoomCode = document.getElementById('display-room-code');
+    const leaveRoomBtn = document.getElementById('leave-room-btn');
+    const myBalanceDisplay = document.getElementById('my-balance-display');
+    const myNameDisplay = document.getElementById('my-name-display');
+    const myTokenBadge = document.getElementById('my-token-badge');
+    const heroBgIcon = document.getElementById('hero-bg-icon');
+    const bankerCrown = document.getElementById('banker-crown');
+    const freeparkingAmount = document.getElementById('freeparking-amount');
+    const keypadDisplay = document.getElementById('keypad-display');
+    const payTargetName = document.getElementById('pay-target-name');
+    const targetPlayerList = document.getElementById('target-player-list');
+    const playersListContainer = document.getElementById('players-list-container');
+    const activityLogContainer = document.getElementById('activity-log-container');
+    const playerCountPill = document.getElementById('player-count-pill');
+    const playerCountLabel = document.getElementById('player-count-label');
+    const customNoteInput = document.getElementById('custom-note-input');
+    const bankerAdminPanel = document.getElementById('banker-admin-panel');
+
+    // Modals
+    const confirmModal = document.getElementById('confirm-modal');
+    const confirmModalTitle = document.getElementById('confirm-modal-title');
+    const confirmModalDesc = document.getElementById('confirm-modal-desc');
+    const confirmModalOk = document.getElementById('confirm-modal-ok');
+    const confirmModalCancel = document.getElementById('confirm-modal-cancel');
+    let pendingConfirmAction = null;
+
+    // Toast utility
+    function showToast(msg, isError = false) {
+      toastMsg.textContent = msg;
+      const content = document.getElementById('toast-content');
+      if (isError) {
+        content.className = "bg-red-950 border border-red-500 text-red-200 text-sm font-semibold px-4 py-2.5 rounded-full shadow-2xl flex items-center gap-2";
+      } else {
+        content.className = "bg-stone-900 border border-yellow-500/50 text-yellow-300 text-sm font-semibold px-4 py-2.5 rounded-full shadow-2xl flex items-center gap-2";
+      }
+      toastEl.classList.remove('opacity-0', '-translate-y-4');
+      toastEl.classList.add('opacity-100', 'translate-y-0');
+      setTimeout(() => {
+        toastEl.classList.add('opacity-0', '-translate-y-4');
+        toastEl.classList.remove('opacity-100', 'translate-y-0');
+      }, 3000);
+    }
+
+    // Modal Confirmation utility (never alert/confirm)
+    function openConfirmModal(title, desc, onConfirm) {
+      confirmModalTitle.textContent = title;
+      confirmModalDesc.textContent = desc;
+      pendingConfirmAction = onConfirm;
+      confirmModal.classList.remove('hidden');
+    }
+
+    confirmModalCancel.addEventListener('click', () => {
+      confirmModal.classList.add('hidden');
+      pendingConfirmAction = null;
+    });
+
+    confirmModalOk.addEventListener('click', () => {
+      confirmModal.classList.add('hidden');
+      if (pendingConfirmAction) pendingConfirmAction();
+      pendingConfirmAction = null;
+    });
+
+    // ----------------------------------------------------
+    // Authentication Setup
+    // ----------------------------------------------------
+    async function authenticate() {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          const userCredential = await signInWithCustomToken(auth, __initial_auth_token);
+          currentUser = userCredential.user;
+        } else {
+          const userCredential = await signInAnonymously(auth);
+          currentUser = userCredential.user;
+        }
+        myPlayerId = currentUser.uid;
+      } catch (err) {
+        console.error("Auth error:", err);
+        showToast("Authentication error, retrying...", true);
+      }
+    }
+
+    // ----------------------------------------------------
+    // Render Tokens in Lobby
+    // ----------------------------------------------------
+    function renderTokens() {
+      const container = document.getElementById('token-selector');
+      container.innerHTML = '';
+      TOKENS.forEach(token => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `p-2.5 rounded-xl border flex flex-col items-center justify-center gap-1 touch-press ${
+          selectedToken.id === token.id 
+            ? 'bg-amber-500 text-board-dark border-amber-300 font-bold shadow' 
+            : 'bg-[#081812] border-emerald-800 text-slate-300 hover:border-emerald-600'
+        }`;
+        btn.innerHTML = `<i class="fa-solid ${token.icon} text-lg"></i>`;
+        btn.title = token.name;
+        btn.addEventListener('click', () => {
+          initAudio();
+          selectedToken = token;
+          playSound('tap');
+          renderTokens();
+        });
+        container.appendChild(btn);
+      });
+    }
+
+    // Starting Balance Preset in Host Form
+    document.querySelectorAll('.start-bal-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        document.querySelectorAll('.start-bal-btn').forEach(b => {
+          b.className = 'start-bal-btn py-2 text-xs font-bold rounded-lg bg-[#081812] border border-emerald-800 text-slate-400';
+        });
+        btn.className = 'start-bal-btn py-2 text-xs font-bold rounded-lg bg-emerald-900 border border-emerald-600 text-white';
+        startingBalSetting = parseInt(btn.dataset.bal, 10);
+      });
+    });
+
+    // Preset Note buttons
+    document.querySelectorAll('.note-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        initAudio();
+        playSound('tap');
+        document.querySelectorAll('.note-chip').forEach(b => {
+          b.className = 'note-chip py-1.5 px-2 rounded-lg bg-[#081812] border border-emerald-900 text-[11px] text-slate-300 truncate hover:border-amber-500/50';
+        });
+        activePresetNote = btn.dataset.note;
+        btn.className = 'note-chip py-1.5 px-2 rounded-lg bg-amber-500 text-board-dark font-bold text-[11px] truncate border border-amber-300';
+      });
+    });
+
+    // Amount preset buttons
+    document.querySelectorAll('.amount-preset-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        initAudio();
+        playSound('tap');
+        const val = parseInt(chip.dataset.val, 10);
+        let curr = parseInt(keypadAmount, 10) || 0;
+        keypadAmount = (curr + val).toString();
+        keypadDisplay.textContent = Number(keypadAmount).toLocaleString();
+      });
+    });
+
+    // ----------------------------------------------------
+    // Firestore Room Helpers
+    // ----------------------------------------------------
+    function getRoomDocRef(code) {
+      // RULE 1: STRICT PATH /artifacts/{appId}/public/data/{collectionName}/{documentId}
+      return doc(db, 'artifacts', appId, 'public', 'data', 'rooms', code);
+    }
+
+    // Host Room
+    document.getElementById('btn-host-room').addEventListener('click', async () => {
+      initAudio();
+      playSound('tap');
+      const name = document.getElementById('input-player-name').value.trim() || 'Banker';
+      const fpEnabled = document.getElementById('checkbox-freeparking').checked;
+
+      // Generate friendly 4-character code
+      const roomCode = Math.floor(1000 + Math.random() * 9000).toString();
+
+      await authenticate();
+      if (!currentUser) return;
+
+      const initialRoomData = {
+        code: roomCode,
+        hostId: myPlayerId,
+        startingBal: startingBalSetting,
+        freeParkingJackpot: 0,
+        freeParkingEnabled: fpEnabled,
+        createdAt: Date.now(),
+        players: {
+          [myPlayerId]: {
+            id: myPlayerId,
+            name: name,
+            token: selectedToken.id,
+            balance: startingBalSetting,
+            isBanker: true,
+            lastSeen: Date.now()
+          }
+        },
+        logs: [
+          {
+            id: 'init-' + Date.now(),
+            text: `Room created by ${name}. Starting cash is $${startingBalSetting.toLocaleString()}.`,
+            timestamp: Date.now(),
+            type: 'system'
+          }
+        ]
+      };
+
+      try {
+        await setDoc(getRoomDocRef(roomCode), initialRoomData);
+        enterGameRoom(roomCode, true);
+      } catch (err) {
+        console.error("Error creating room:", err);
+        showToast("Failed to create room. Please try again.", true);
+      }
+    });
+
+    // Join Room
+    document.getElementById('btn-join-room').addEventListener('click', async () => {
+      initAudio();
+      playSound('tap');
+      const name = document.getElementById('input-player-name').value.trim() || 'Player';
+      const code = document.getElementById('input-room-code').value.trim().toUpperCase();
+
+      if (!code || code.length < 4) {
+        showToast("Please enter a valid 4-digit code", true);
+        return;
+      }
+
+      await authenticate();
+      if (!currentUser) return;
+
+      const roomRef = getRoomDocRef(code);
+      try {
+        const snap = await getDoc(roomRef);
+        if (!snap.exists()) {
+          showToast("Room not found! Check the 4-digit code.", true);
+          return;
+        }
+
+        const data = snap.data();
+        const players = data.players || {};
+        
+        // Add or re-link player
+        if (!players[myPlayerId]) {
+          players[myPlayerId] = {
+            id: myPlayerId,
+            name: name,
+            token: selectedToken.id,
+            balance: data.startingBal || 1500,
+            isBanker: false,
+            lastSeen: Date.now()
+          };
+
+          const logs = data.logs || [];
+          logs.unshift({
+            id: 'join-' + Date.now(),
+            text: `${name} joined the game as ${selectedToken.name}.`,
+            timestamp: Date.now(),
+            type: 'join'
+          });
+
+          await updateDoc(roomRef, {
+            players: players,
+            logs: logs.slice(0, 35) // Keep last 35 logs
+          });
+        }
+
+        enterGameRoom(code, players[myPlayerId]?.isBanker || false);
+      } catch (err) {
+        console.error("Join room error:", err);
+        showToast("Could not join room.", true);
+      }
+    });
+
+    // ----------------------------------------------------
+    // Enter & Listen to Room
+    // ----------------------------------------------------
+    function enterGameRoom(code, isBanker) {
+      currentRoomCode = code;
+      displayRoomCode.textContent = code;
+      roomBadge.classList.remove('hidden');
+      leaveRoomBtn.classList.remove('hidden');
+      lobbySec.classList.add('hidden');
+      gameSec.classList.remove('hidden');
+
+      if (isBanker) {
+        bankerAdminPanel.classList.remove('hidden');
+      }
+
+      // Attach Firestore Listener
+      if (roomUnsubscribe) roomUnsubscribe();
+
+      const roomRef = getRoomDocRef(code);
+      roomUnsubscribe = onSnapshot(roomRef, (docSnap) => {
+        if (!docSnap.exists()) {
+          showToast("Session was closed by banker.", true);
+          exitToLobby();
+          return;
+        }
+        currentRoomData = docSnap.data();
+        updateGameUI(currentRoomData);
+      }, (error) => {
+        console.error("Room sync error:", error);
+        showToast("Connection sync issue.", true);
+      });
+
+      showToast(`Connected to Room #${code}!`);
+    }
+
+    // ----------------------------------------------------
+    // Update Game UI from Realtime Doc
+    // ----------------------------------------------------
+    function updateGameUI(data) {
+      if (!data) return;
+
+      const myData = data.players ? data.players[myPlayerId] : null;
+
+      // If user was removed or not in players
+      if (!myData) {
+        showToast("You are no longer in this game.", true);
+        exitToLobby();
+        return;
+      }
+
+      // Update My Balance & Profile
+      myNameDisplay.textContent = myData.name;
+      myBalanceDisplay.textContent = (myData.balance || 0).toLocaleString();
+      
+      const tokenObj = TOKENS.find(t => t.id === myData.token) || TOKENS[0];
+      myTokenBadge.innerHTML = `<i class="fa-solid ${tokenObj.icon}"></i>`;
+      heroBgIcon.className = `fa-solid ${tokenObj.icon}`;
+
+      if (myData.isBanker) {
+        bankerCrown.classList.remove('hidden');
+        bankerAdminPanel.classList.remove('hidden');
+      } else {
+        bankerCrown.classList.add('hidden');
+        bankerAdminPanel.classList.add('hidden');
+      }
+
+      // Free Parking Pot
+      if (data.freeParkingEnabled !== false) {
+        document.getElementById('freeparking-banner').classList.remove('hidden');
+        document.getElementById('btn-collect-freeparking').classList.remove('hidden');
+        freeparkingAmount.textContent = '$' + (data.freeParkingJackpot || 0).toLocaleString();
+      } else {
+        document.getElementById('freeparking-banner').classList.add('hidden');
+        document.getElementById('btn-collect-freeparking').classList.add('hidden');
+      }
+
+      // Update Target Selector Bar
+      renderTargetPlayerList(data.players || {});
+
+      // Update Players Tab List
+      renderPlayersTabList(data.players || {});
+
+      // Update Logs
+      renderLogs(data.logs || []);
+    }
+
+    // Render horizontal player targets (plus Bank)
+    function renderTargetPlayerList(players) {
+      targetPlayerList.innerHTML = '';
+
+      // 1. Bank Option
+      const bankBtn = document.createElement('button');
+      bankBtn.className = `flex-shrink-0 px-3.5 py-2 rounded-xl border flex items-center gap-2 text-xs font-bold touch-press ${
+        selectedTargetId === 'BANK'
+          ? 'bg-amber-500 text-board-dark border-amber-300 shadow-md'
+          : 'bg-[#091e16] border-emerald-800 text-slate-300 hover:border-emerald-600'
+      }`;
+      bankBtn.innerHTML = `<i class="fa-solid fa-building-columns text-sm"></i> <span>THE BANK</span>`;
+      bankBtn.addEventListener('click', () => {
+        initAudio();
+        playSound('tap');
+        selectedTargetId = 'BANK';
+        payTargetName.textContent = 'THE BANK';
+        renderTargetPlayerList(players);
+      });
+      targetPlayerList.appendChild(bankBtn);
+
+      // 2. Other Players
+      Object.values(players).forEach(p => {
+        if (p.id === myPlayerId) return; // exclude self
+
+        const pToken = TOKENS.find(t => t.id === p.token) || TOKENS[0];
+        const isSelected = selectedTargetId === p.id;
+        const btn = document.createElement('button');
+        btn.className = `flex-shrink-0 px-3 py-1.5 rounded-xl border flex items-center gap-2 text-xs font-bold touch-press ${
+          isSelected
+            ? 'bg-amber-500 text-board-dark border-amber-300 shadow-md'
+            : 'bg-[#091e16] border-emerald-800 text-slate-300 hover:border-emerald-600'
+        }`;
+        btn.innerHTML = `<i class="fa-solid ${pToken.icon} text-sm"></i> <span>${p.name}</span>`;
+        btn.addEventListener('click', () => {
+          initAudio();
+          playSound('tap');
+          selectedTargetId = p.id;
+          payTargetName.textContent = p.name.toUpperCase();
+          renderTargetPlayerList(players);
+        });
+        targetPlayerList.appendChild(btn);
+      });
+
+      // Update Pay button text
+      if (selectedTargetId === 'BANK') {
+        payTargetName.textContent = 'THE BANK';
+      } else {
+        const targetObj = players[selectedTargetId];
+        payTargetName.textContent = targetObj ? targetObj.name.toUpperCase() : 'THE BANK';
+      }
+    }
+
+    // Render Players in "Table" view
+    function renderPlayersTabList(players) {
+      playersListContainer.innerHTML = '';
+      const playerArray = Object.values(players);
+
+      playerCountPill.textContent = playerArray.length;
+      playerCountLabel.textContent = `${playerArray.length} Active Player${playerArray.length === 1 ? '' : 's'}`;
+
+      playerArray.forEach(p => {
+        const isMe = p.id === myPlayerId;
+        const tokenObj = TOKENS.find(t => t.id === p.token) || TOKENS[0];
+
+        const card = document.createElement('div');
+        card.className = `p-3 rounded-xl border flex items-center justify-between ${
+          isMe 
+            ? 'bg-[#153a2a] border-amber-400/50 shadow' 
+            : 'bg-[#0f281e] border-emerald-800/80'
+        }`;
+
+        card.innerHTML = `
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-[#091e16] border border-emerald-700/60 flex items-center justify-center text-amber-300 text-lg">
+              <i class="fa-solid ${tokenObj.icon}"></i>
+            </div>
+            <div>
+              <div class="flex items-center gap-1.5">
+                <span class="font-bold text-sm text-white">${p.name}</span>
+                ${isMe ? '<span class="text-[10px] bg-amber-400 text-board-dark px-1.5 py-0.2 rounded font-extrabold">YOU</span>' : ''}
+                ${p.isBanker ? '<span class="text-amber-400 text-xs"><i class="fa-solid fa-crown" title="Banker"></i></span>' : ''}
+              </div>
+              <span class="text-[11px] text-slate-400 font-mono">${tokenObj.name}</span>
+            </div>
+          </div>
+          <div class="text-right">
+            <div class="text-lg font-mono font-bold text-amber-300">
+              $${(p.balance || 0).toLocaleString()}
+            </div>
+            <span class="text-[10px] text-slate-400">Cash on Hand</span>
+          </div>
+        `;
+
+        playersListContainer.appendChild(card);
+      });
+    }
+
+    // Render activity feed
+    function renderLogs(logs) {
+      activityLogContainer.innerHTML = '';
+      if (!logs || logs.length === 0) {
+        activityLogContainer.innerHTML = '<div class="text-center text-slate-500 text-xs py-4">No transactions recorded yet.</div>';
+        return;
+      }
+
+      logs.forEach(log => {
+        const item = document.createElement('div');
+        item.className = "bg-[#0c2219] border border-emerald-900/80 rounded-xl p-2.5 flex items-start gap-2.5 text-xs";
+
+        let icon = '<i class="fa-solid fa-receipt text-amber-400 mt-0.5"></i>';
+        if (log.type === 'go') icon = '<i class="fa-solid fa-arrow-rotate-right text-emerald-400 mt-0.5"></i>';
+        if (log.type === 'transfer') icon = '<i class="fa-solid fa-arrow-right-arrow-left text-teal-400 mt-0.5"></i>';
+        if (log.type === 'jackpot') icon = '<i class="fa-solid fa-trophy text-yellow-400 mt-0.5"></i>';
+        if (log.type === 'join') icon = '<i class="fa-solid fa-user-plus text-slate-400 mt-0.5"></i>';
+
+        const timeStr = new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        item.innerHTML = `
+          <div class="flex-shrink-0">${icon}</div>
+          <div class="flex-1 min-w-0">
+            <p class="text-slate-200 font-medium leading-snug break-words">${log.text}</p>
+            <span class="text-[10px] text-slate-500 font-mono">${timeStr}</span>
+          </div>
+        `;
+        activityLogContainer.appendChild(item);
+      });
+    }
+
+    // ----------------------------------------------------
+    // Tactile Keypad Logic
+    // ----------------------------------------------------
+    document.querySelectorAll('.numpad-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        initAudio();
+        playSound('tap');
+        const num = btn.dataset.num;
+        if (keypadAmount === '0') {
+          keypadAmount = num;
+        } else if (keypadAmount.length < 7) {
+          keypadAmount += num;
+        }
+        keypadDisplay.textContent = Number(keypadAmount).toLocaleString();
+      });
+    });
+
+    document.getElementById('numpad-clear').addEventListener('click', () => {
+      initAudio();
+      playSound('tap');
+      keypadAmount = '0';
+      keypadDisplay.textContent = '0';
+    });
+
+    document.getElementById('numpad-backspace').addEventListener('click', () => {
+      initAudio();
+      playSound('tap');
+      if (keypadAmount.length > 1) {
+        keypadAmount = keypadAmount.slice(0, -1);
+      } else {
+        keypadAmount = '0';
+      }
+      keypadDisplay.textContent = Number(keypadAmount).toLocaleString();
+    });
+
+    // ----------------------------------------------------
+    // Financial Actions Logic
+    // ----------------------------------------------------
+    function getCleanNote() {
+      const custom = customNoteInput.value.trim();
+      if (custom) return custom;
+      if (activePresetNote) return activePresetNote;
+      return '';
+    }
+
+    function resetKeypad() {
+      keypadAmount = '0';
+      keypadDisplay.textContent = '0';
+      customNoteInput.value = '';
+      activePresetNote = '';
+      document.querySelectorAll('.note-chip').forEach(b => {
+        b.className = 'note-chip py-1.5 px-2 rounded-lg bg-[#081812] border border-emerald-900 text-[11px] text-slate-300 truncate hover:border-amber-500/50';
+      });
+    }
+
+    // 1. QUICK PASS GO (+$200)
+    document.getElementById('btn-quick-go').addEventListener('click', async () => {
+      initAudio();
+      if (!currentRoomData || !currentRoomCode) return;
+
+      const roomRef = getRoomDocRef(currentRoomCode);
+      const players = { ...currentRoomData.players };
+      const me = players[myPlayerId];
+      if (!me) return;
+
+      me.balance = (me.balance || 0) + 200;
+      players[myPlayerId] = me;
+
+      const logs = currentRoomData.logs || [];
+      logs.unshift({
+        id: 'go-' + Date.now(),
+        text: `${me.name} passed GO and collected $200 from the Bank.`,
+        timestamp: Date.now(),
+        type: 'go'
+      });
+
+      playSound('go');
+      showToast("Collected $200 from GO!");
+
+      try {
+        await updateDoc(roomRef, {
+          players: players,
+          logs: logs.slice(0, 35)
+        });
+      } catch (err) {
+        console.error(err);
+      }
+    });
+
+    // 2. COLLECT FREE PARKING JACKPOT
+    document.getElementById('btn-collect-freeparking').addEventListener('click', () => {
+      initAudio();
+      if (!currentRoomData || !currentRoomCode) return;
+      const pot = currentRoomData.freeParkingJackpot || 0;
+      if (pot <= 0) {
+        showToast("The Free Parking pot is currently empty ($0).", true);
+        return;
+      }
+
+      openConfirmModal(
+        "Take Free Parking Pot?",
+        `Collect the entire $${pot.toLocaleString()} jackpot to your cash?`,
+        async () => {
+          const roomRef = getRoomDocRef(currentRoomCode);
+          const players = { ...currentRoomData.players };
+          const me = players[myPlayerId];
+          if (!me) return;
+
+          me.balance = (me.balance || 0) + pot;
+          players[myPlayerId] = me;
+
+          const logs = currentRoomData.logs || [];
+          logs.unshift({
+            id: 'pot-' + Date.now(),
+            text: `🎉 ${me.name} landed on Free Parking and won the jackpot of $${pot.toLocaleString()}!`,
+            timestamp: Date.now(),
+            type: 'jackpot'
+          });
+
+          playSound('jackpot');
+          showToast(`Won $${pot.toLocaleString()} from Free Parking!`);
+
+          try {
+            await updateDoc(roomRef, {
+              players: players,
+              freeParkingJackpot: 0,
+              logs: logs.slice(0, 35)
+            });
+          } catch (err) {
+            console.error(err);
+          }
+        }
+      );
+    });
+
+    // 3. PAY TARGET (Pay Bank or Pay Another Player)
+    document.getElementById('btn-pay-target').addEventListener('click', () => {
+      initAudio();
+      const amount = parseInt(keypadAmount, 10);
+      if (isNaN(amount) || amount <= 0) {
+        showToast("Enter a payment amount first using the keypad.", true);
+        return;
+      }
+
+      if (!currentRoomData || !currentRoomCode) return;
+      const me = currentRoomData.players[myPlayerId];
+      if (!me) return;
+
+      if (me.balance < amount) {
+        showToast(`Insufficient cash! You only have $${me.balance.toLocaleString()}.`, true);
+        return;
+      }
+
+      const note = getCleanNote();
+      const noteLabel = note ? ` for "${note}"` : '';
+
+      if (selectedTargetId === 'BANK') {
+        openConfirmModal(
+          "Pay the Bank",
+          `Pay $${amount.toLocaleString()} to the Bank${noteLabel}?`,
+          () => executePayBank(amount, note)
+        );
+      } else {
+        const targetPlayer = currentRoomData.players[selectedTargetId];
+        if (!targetPlayer) {
+          showToast("Target player not found.", true);
+          return;
+        }
+        openConfirmModal(
+          `Pay ${targetPlayer.name}`,
+          `Transfer $${amount.toLocaleString()} to ${targetPlayer.name}${noteLabel}?`,
+          () => executePayPlayer(amount, targetPlayer, note)
+        );
+      }
+    });
+
+    async function executePayBank(amount, note) {
+      const roomRef = getRoomDocRef(currentRoomCode);
+      const players = { ...currentRoomData.players };
+      const me = players[myPlayerId];
+      me.balance -= amount;
+      players[myPlayerId] = me;
+
+      // If Free Parking is enabled and reason sounds like tax/fine/fees, add to pot
+      let newPot = currentRoomData.freeParkingJackpot || 0;
+      const isTax = note.toLowerCase().includes('tax') || note.toLowerCase().includes('fine') || note.toLowerCase().includes('fee') || note.toLowerCase().includes('jail');
+      if (currentRoomData.freeParkingEnabled && isTax) {
+        newPot += amount;
+      }
+
+      const logs = currentRoomData.logs || [];
+      const noteSuffix = note ? ` (${note})` : '';
+      const fpSuffix = (currentRoomData.freeParkingEnabled && isTax) ? ' [Added to Free Parking Pot]' : '';
+      logs.unshift({
+        id: 'paybank-' + Date.now(),
+        text: `${me.name} paid $${amount.toLocaleString()} to the Bank${noteSuffix}.${fpSuffix}`,
+        timestamp: Date.now(),
+        type: 'transfer'
+      });
+
+      playSound('pay');
+      resetKeypad();
+      showToast(`Paid $${amount.toLocaleString()} to the Bank.`);
+
+      try {
+        await updateDoc(roomRef, {
+          players: players,
+          freeParkingJackpot: newPot,
+          logs: logs.slice(0, 35)
+        });
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function executePayPlayer(amount, targetPlayer, note) {
+      const roomRef = getRoomDocRef(currentRoomCode);
+      const players = { ...currentRoomData.players };
+      const me = players[myPlayerId];
+      const target = players[targetPlayer.id];
+
+      if (!me || !target) return;
+
+      me.balance -= amount;
+      target.balance = (target.balance || 0) + amount;
+      players[myPlayerId] = me;
+      players[targetPlayer.id] = target;
+
+      const logs = currentRoomData.logs || [];
+      const noteSuffix = note ? ` (${note})` : '';
+      logs.unshift({
+        id: 'transfer-' + Date.now(),
+        text: `${me.name} paid $${amount.toLocaleString()} to ${target.name}${noteSuffix}.`,
+        timestamp: Date.now(),
+        type: 'transfer'
+      });
+
+      playSound('pay');
+      resetKeypad();
+      showToast(`Transferred $${amount.toLocaleString()} to ${target.name}.`);
+
+      try {
+        await updateDoc(roomRef, {
+          players: players,
+          logs: logs.slice(0, 35)
+        });
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    // 4. COLLECT FROM BANK (Mortgages, Chance cards, Bank Dividend)
+    document.getElementById('btn-collect-bank').addEventListener('click', () => {
+      initAudio();
+      const amount = parseInt(keypadAmount, 10);
+      if (isNaN(amount) || amount <= 0) {
+        showToast("Enter an amount to collect using the keypad.", true);
+        return;
+      }
+
+      const note = getCleanNote();
+      const noteLabel = note ? ` (${note})` : '';
+
+      openConfirmModal(
+        "Collect from Bank",
+        `Collect $${amount.toLocaleString()} from the Bank${noteLabel}?`,
+        async () => {
+          const roomRef = getRoomDocRef(currentRoomCode);
+          const players = { ...currentRoomData.players };
+          const me = players[myPlayerId];
+          if (!me) return;
+
+          me.balance += amount;
+          players[myPlayerId] = me;
+
+          const logs = currentRoomData.logs || [];
+          logs.unshift({
+            id: 'collectbank-' + Date.now(),
+            text: `${me.name} collected $${amount.toLocaleString()} from the Bank${noteLabel}.`,
+            timestamp: Date.now(),
+            type: 'transfer'
+          });
+
+          playSound('collect');
+          resetKeypad();
+          showToast(`Collected $${amount.toLocaleString()} from Bank.`);
+
+          try {
+            await updateDoc(roomRef, {
+              players: players,
+              logs: logs.slice(0, 35)
+            });
+          } catch (err) {
+            console.error(err);
+          }
+        }
+      );
+    });
+
+    // ----------------------------------------------------
+    // Banker Host Tools
+    // ----------------------------------------------------
+    document.getElementById('btn-admin-bonus-all').addEventListener('click', () => {
+      openConfirmModal(
+        "Give All Players $200",
+        "Add $200 to every player's wallet simultaneously?",
+        async () => {
+          if (!currentRoomData || !currentRoomCode) return;
+          const roomRef = getRoomDocRef(currentRoomCode);
+          const players = { ...currentRoomData.players };
+
+          Object.keys(players).forEach(id => {
+            players[id].balance = (players[id].balance || 0) + 200;
+          });
+
+          const logs = currentRoomData.logs || [];
+          logs.unshift({
+            id: 'bonus-' + Date.now(),
+            text: `👑 Banker issued a $200 bonus to all players!`,
+            timestamp: Date.now(),
+            type: 'system'
+          });
+
+          playSound('jackpot');
+          try {
+            await updateDoc(roomRef, {
+              players: players,
+              logs: logs.slice(0, 35)
+            });
+            showToast("Gave $200 to all players!");
+          } catch (err) {
+            console.error(err);
+          }
+        }
+      );
+    });
+
+    document.getElementById('btn-admin-reset-freeparking').addEventListener('click', () => {
+      openConfirmModal(
+        "Clear Free Parking",
+        "Reset the Free Parking jackpot pot back to $0?",
+        async () => {
+          if (!currentRoomData || !currentRoomCode) return;
+          const roomRef = getRoomDocRef(currentRoomCode);
+          try {
+            await updateDoc(roomRef, { freeParkingJackpot: 0 });
+            showToast("Free Parking pot reset to $0.");
+          } catch (err) {
+            console.error(err);
+          }
+        }
+      );
+    });
+
+    // ----------------------------------------------------
+    // View Switchers & Navigation
+    // ----------------------------------------------------
+    const tabViewActions = document.getElementById('tab-view-actions');
+    const tabViewPlayers = document.getElementById('tab-view-players');
+    const tabViewLogs = document.getElementById('tab-view-logs');
+
+    const subviewActions = document.getElementById('subview-actions');
+    const subviewPlayers = document.getElementById('subview-players');
+    const subviewLogs = document.getElementById('subview-logs');
+
+    function setActiveTab(btn, targetView) {
+      initAudio();
+      playSound('tap');
+      [tabViewActions, tabViewPlayers, tabViewLogs].forEach(t => {
+        t.className = 'flex-1 py-2 rounded-lg text-slate-300 flex items-center justify-center gap-1.5';
+      });
+      btn.className = 'flex-1 py-2 rounded-lg bg-emerald-800 text-amber-300 shadow font-bold flex items-center justify-center gap-1.5';
+
+      subviewActions.classList.add('hidden');
+      subviewPlayers.classList.add('hidden');
+      subviewLogs.classList.add('hidden');
+
+      targetView.classList.remove('hidden');
+    }
+
+    tabViewActions.addEventListener('click', () => setActiveTab(tabViewActions, subviewActions));
+    tabViewPlayers.addEventListener('click', () => setActiveTab(tabViewPlayers, subviewPlayers));
+    tabViewLogs.addEventListener('click', () => setActiveTab(tabViewLogs, subviewLogs));
+
+    // Lobby Join/Host tab toggle
+    const tabJoin = document.getElementById('tab-join');
+    const tabHost = document.getElementById('tab-host');
+    const joinForm = document.getElementById('join-form');
+    const hostForm = document.getElementById('host-form');
+
+    tabJoin.addEventListener('click', () => {
+      tabJoin.className = 'flex-1 py-2 text-xs font-bold rounded-lg bg-amber-500 text-board-dark shadow';
+      tabHost.className = 'flex-1 py-2 text-xs font-bold rounded-lg text-slate-400';
+      joinForm.classList.remove('hidden');
+      hostForm.classList.add('hidden');
+    });
+
+    tabHost.addEventListener('click', () => {
+      tabHost.className = 'flex-1 py-2 text-xs font-bold rounded-lg bg-amber-500 text-board-dark shadow';
+      tabJoin.className = 'flex-1 py-2 text-xs font-bold rounded-lg text-slate-400';
+      hostForm.classList.remove('hidden');
+      joinForm.classList.add('hidden');
+    });
+
+    // Sound toggle
+    const toggleSoundBtn = document.getElementById('toggle-sound-btn');
+    const soundIcon = document.getElementById('sound-icon');
+    toggleSoundBtn.addEventListener('click', () => {
+      soundEnabled = !soundEnabled;
+      if (soundEnabled) {
+        soundIcon.className = "fa-solid fa-volume-high";
+        showToast("Sound effects enabled.");
+      } else {
+        soundIcon.className = "fa-solid fa-volume-xmark";
+        showToast("Sound muted.");
+      }
+    });
+
+    // Copy room code
+    document.getElementById('copy-room-btn').addEventListener('click', () => {
+      if (!currentRoomCode) return;
+      const tempInput = document.createElement('input');
+      tempInput.value = currentRoomCode;
+      document.body.appendChild(tempInput);
+      tempInput.select();
+      document.execCommand('copy');
+      document.body.removeChild(tempInput);
+      showToast(`Copied room code: ${currentRoomCode}`);
+    });
+
+    // Leave room
+    leaveRoomBtn.addEventListener('click', () => {
+      openConfirmModal(
+        "Leave Game Table?",
+        "Are you sure you want to disconnect from this game session?",
+        () => {
+          exitToLobby();
+          showToast("Left the game room.");
+        }
+      );
+    });
+
+    function exitToLobby() {
+      if (roomUnsubscribe) {
+        roomUnsubscribe();
+        roomUnsubscribe = null;
+      }
+      currentRoomCode = null;
+      currentRoomData = null;
+      roomBadge.classList.add('hidden');
+      leaveRoomBtn.classList.add('hidden');
+      gameSec.classList.add('hidden');
+      lobbySec.classList.remove('hidden');
+      resetKeypad();
+    }
+
+    // ----------------------------------------------------
+    // Startup
+    // ----------------------------------------------------
+    window.onload = function() {
+      renderTokens();
+      // Auto pre-authenticate
+      authenticate();
+    };
+
+    // User gesture unlock for audio
+    document.addEventListener('pointerdown', () => {
+      initAudio();
+    }, { once: true });
+
+  </script>
+</body>
+</html>
